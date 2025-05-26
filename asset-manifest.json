@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/science-model-dashboard/static/css/main.d855b5bd.css",
+    "main.js": "/science-model-dashboard/static/js/main.d162e90c.js",
+    "index.html": "/science-model-dashboard/index.html",
+    "main.d855b5bd.css.map": "/science-model-dashboard/static/css/main.d855b5bd.css.map",
+    "main.d162e90c.js.map": "/science-model-dashboard/static/js/main.d162e90c.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.d855b5bd.css",
+    "static/js/main.d162e90c.js"
+  ]
+}
