@@ -4,9 +4,10 @@ import { ArrowLeft, Download, Search, Filter, SortAsc, SortDesc } from 'lucide-r
 import { Link } from 'react-router-dom';
 
 // Import the JSON data directly
-// Note: You'll need to place the crossref_data.json file in the same directory as this component
+// Note: You'll need to place the rapid_20250523.json file in the same directory as this component
 // or adjust the path accordingly
-import citationsData from './rapid_20250528_2.json';
+import citationsData from './rapid_20250528.json';
+
 
 // Multi-select component
 const MultiSelect = ({ options, selectedValues, onChange, placeholder }) => {
@@ -90,8 +91,8 @@ const CitationsPage = () => {
   useEffect(() => {
     try {
       setLoading(true);
-      console.log('Processing Crossref citation data');
-      processCrossrefData(citationsData);
+      console.log(`Processing ${citationsData.length} directly imported citations`);
+      processCitationData(citationsData);
     } catch (error) {
       console.error('Error processing imported data:', error);
       setError(`Error: ${error.message}`);
@@ -101,141 +102,56 @@ const CitationsPage = () => {
     }
   }, []);
   
-  // Extract year from date-parts array
-  const extractYear = (dateObj) => {
-    if (!dateObj || !dateObj['date-parts'] || !Array.isArray(dateObj['date-parts'][0])) {
-      return null;
-    }
-    return dateObj['date-parts'][0][0];
-  };
-  
-  // Format authors from Crossref format
-  const formatAuthors = (authorArray) => {
-    if (!Array.isArray(authorArray) || authorArray.length === 0) {
-      return 'Unknown';
+  // Process the citation data
+  const processCitationData = (data) => {
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error("Invalid JSON data format or empty data");
     }
     
-    const formattedAuthors = authorArray.map(author => {
-      const given = author.given || '';
-      const family = author.family || '';
-      return `${family}${given ? ', ' + given : ''}`;
-    });
-    
-    if (formattedAuthors.length > 3) {
-      return formattedAuthors.slice(0, 3).join('; ') + ' et al.';
-    }
-    
-    return formattedAuthors.join('; ');
-  };
-  
-  // Extract abstract text from JATS format
-  const extractAbstract = (abstractHtml) => {
-    if (!abstractHtml) return 'No abstract available';
-    
-    // Remove JATS tags and clean up HTML
-    return abstractHtml
-      .replace(/<jats:[^>]*>/g, '')
-      .replace(/<\/jats:[^>]*>/g, '')
-      .replace(/<[^>]*>/g, '')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/\s+/g, ' ')
-      .trim();
-  };
-  
-  // Process Crossref data format
-  const processCrossrefData = (data) => {
-    // Handle both single object and array formats
-    const records = Array.isArray(data) ? data : [data];
-    
-    if (records.length === 0) {
-      throw new Error("No data found in JSON file");
-    }
-    
-    console.log(`Processing ${records.length} Crossref records`);
-    
-    // Transform the Crossref data
-    const transformedData = records.map((record, index) => {
-      // Extract publication year
-      const publishedYear = extractYear(record.published) || 
-                           extractYear(record['published-online']) || 
-                           extractYear(record['published-print']);
-      
-      // Format title (remove array wrapper if present)
-      const title = Array.isArray(record.title) ? record.title[0] : record.title || 'Untitled';
-      
-      // Format authors
-      const authors = formatAuthors(record.author);
-      
-      // Extract journal/source info
-      const source = Array.isArray(record['container-title']) 
-        ? record['container-title'][0] 
-        : record['container-title'] || record.publisher || 'Unknown';
-      
-      // Extract abstract
-      const abstract = extractAbstract(record.abstract);
-      
-      // Construct URL
-      const url = record.URL || (record.DOI ? `https://doi.org/${record.DOI}` : '');
-      
-      // Use engagement level from JSON file if available, otherwise use default
-      let engagementLevel = record.engagement_level || 'Level 1: Basic Citation';
-      
-      // If engagement_level is not in the JSON, fall back to citation-based determination
-      if (!record.engagement_level) {
-        const citationCount = record['is-referenced-by-count'] || 0;
-        if (citationCount > 500) {
-          engagementLevel = 'Level 4: Foundational Method';
-        } else if (citationCount > 100) {
-          engagementLevel = 'Level 3: Model Adaptation';
-        } else if (citationCount > 20) {
-          engagementLevel = 'Level 2: Data Usage';
-        }
+    // Transform the data
+    const transformedData = data.map((citation, index) => {
+      // Handle different author formats
+      let authorString = 'Unknown';
+      if (Array.isArray(citation.authors)) {
+        authorString = citation.authors.join(', ');
+      } else if (typeof citation.authors === 'string') {
+        authorString = citation.authors;
       }
       
-      // Determine research domain from JSON or title keywords
-      let researchDomain = record.research_domain || 'Water Resources';
-      if (!record.research_domain) {
-        if (title.toLowerCase().includes('hydro')) {
-          researchDomain = 'Hydrology';
-        } else if (title.toLowerCase().includes('river') || title.toLowerCase().includes('flow')) {
-          researchDomain = 'River Modeling';
-        } else if (title.toLowerCase().includes('climate')) {
-          researchDomain = 'Climate Science';
-        }
+      // Check for trailing ellipsis in author string which indicates truncation
+      if (authorString.endsWith('...')) {
+        authorString = authorString.replace(/\s*\.\.\.$/, ' et al.');
       }
       
-      // Extract watershed and country info (use from JSON if available)
-      const watershed = record.watershed || 'Global';
-      const country = record.country || 'Global';
+      // Determine URLs
+      const url = citation.article_url || citation.fulltext_url || citation.cites_url || '';
       
-      // Check if this is a key RAPID paper
-      const isOriginalPaper = title.toLowerCase().includes('rapid') && 
-                             title.toLowerCase().includes('routing');
+      // Determine if this is a key paper (RAPID original papers)
+      const title = String(citation.title || '').toLowerCase();
+      const isOriginalPaper = 
+        title.includes('rapid applied') || 
+        title.includes('routing application for parallel') ||
+        (title.includes('rapid') && title.includes('model')) ||
+        citation.engagement_level === 'Level 4: Foundational Method';
       
       return {
         id: index + 1,
-        title: title,
-        authors: authors,
-        year: publishedYear || 'Unknown',
-        source: source,
-        publisher: record.publisher || '',
-        doi: record.DOI || '',
-        cites: record['is-referenced-by-count'] || 0,
+        title: citation.title || 'Untitled',
+        authors: authorString,
+        year: citation.year || 'Unknown',
+        source: citation.source || 'Unknown',
+        publisher: citation.publisher || '',
+        doi: citation.doi || '',
+        cites: citation.cites || 0,
         url: url,
-        fulltext_url: url,
-        cites_url: record.DOI ? `https://scholar.google.com/scholar?cites=${record.DOI}` : '',
-        abstract: abstract,
-        engagement_level: engagementLevel,
-        research_domain: researchDomain,
-        watershed: watershed,
-        country: country,
-        isOriginalPaper: isOriginalPaper,
-        pages: record.page || '',
-        volume: record.volume || '',
-        issue: record.issue || '',
-        referenceCount: record['references-count'] || 0
+        fulltext_url: citation.fulltext_url || '',
+        cites_url: citation.cites_url || '',
+        abstract: citation.abstract || 'No abstract available',
+        engagement_level: citation.engagement_level || 'Unknown',
+        research_domain: citation.research_domain || 'Unknown',
+        watershed: citation.watershed || 'Unknown',
+        country: citation.country || 'Unknown',
+        isOriginalPaper: isOriginalPaper
       };
     });
     
@@ -245,7 +161,7 @@ const CitationsPage = () => {
     console.log(`Transformed ${transformedData.length} citations`);
     setCitations(transformedData);
     
-    // Update year range based on actual data
+    // Update year range
     const years = transformedData
       .map(c => c.year)
       .filter(year => typeof year === 'number');
@@ -254,36 +170,52 @@ const CitationsPage = () => {
       setYearRange([Math.min(...years), Math.max(...years)]);
     }
     
+    // Clear existing demo data notification
     setError(null);
   };
   
-  // Set demo data (fallback)
+  // Set demo data
   const setDemoData = () => {
     console.log("Setting up demo citation data");
     
+    // Create some sample citation data
     const mockCitations = [
       {
         id: 1,
-        title: "Global Reconstruction of Naturalized River Flows at 2.94 Million Reaches",
-        authors: "Lin, Peirong; Pan, Ming; Beck, Hylke E.; Yang, Yuan; Yamazaki, Dai",
-        year: 2019,
-        source: "Water Resources Research",
-        publisher: "American Geophysical Union (AGU)",
-        doi: "10.1029/2019WR025287",
-        cites: 213,
-        url: "https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2019WR025287",
+        title: "RAPID applied to the SIM‐France model",
+        authors: "David CH, Habets F, Maidment DR, Yang ZL",
+        year: 2011,
+        source: "Hydrological Processes",
+        publisher: "Wiley Online Library",
+        doi: "10.1002/hyp.8070",
+        cites: 99,
+        url: "https://onlinelibrary.wiley.com/doi/abs/10.1002/hyp.8070",
         engagement_level: "Level 3: Model Adaptation",
         research_domain: "River Modeling",
+        watershed: "France",
+        country: "France",
+        isOriginalPaper: true
+      },
+      {
+        id: 2,
+        title: "Global river hydrography and network routing: baseline data and new approaches to study the world's large river systems",
+        authors: "Lehner B, Grill G",
+        year: 2013,
+        source: "Hydrological Processes",
+        publisher: "Wiley Online Library",
+        doi: "10.1002/HYP.9740",
+        cites: 1579,
+        engagement_level: "Level 2: Data Usage",
+        research_domain: "Water Resources",
         watershed: "Global",
         country: "Global",
-        isOriginalPaper: true,
-        abstract: "Spatiotemporally continuous global river discharge estimates across the full spectrum of stream orders are vital to a range of hydrologic applications, yet they remain poorly constrained..."
+        isOriginalPaper: false
       }
     ];
     
     setCitations(mockCitations);
     setLoading(false);
-    setError("Using demo data based on provided research paper.");
+    setError("Using demo data. JSON file could not be imported properly.");
   };
 
   // Get unique values for filter dropdowns
@@ -298,7 +230,7 @@ const CitationsPage = () => {
   
   // Filter citations
   const filteredCitations = citations.filter(citation => {
-    // Filter by search term
+    // Filter by search term (search in title, authors, source, abstract, doi)
     const searchMatch = searchTerm === '' || [
       citation.title,
       citation.authors,
@@ -354,7 +286,7 @@ const CitationsPage = () => {
     
     // Sort numerically or alphabetically
     let comparison = 0;
-    if (['cites', 'year', 'referenceCount'].includes(sortField)) {
+    if (['cites', 'year'].includes(sortField)) {
       comparison = parseFloat(aValue) - parseFloat(bValue);
     } else {
       comparison = String(aValue).toLowerCase().localeCompare(String(bValue).toLowerCase());
@@ -376,15 +308,10 @@ const CitationsPage = () => {
   
   // Export data as CSV
   const exportCSV = () => {
-    const headers = [
-      'Title', 'Authors', 'Year', 'Source', 'Publisher', 'DOI', 'Citations', 
-      'Engagement Level', 'Research Domain', 'Watershed', 'Country', 
-      'Volume', 'Issue', 'Pages', 'Reference Count'
-    ];
+    const headers = ['Title', 'Authors', 'Year', 'Source', 'Publisher', 'DOI', 'Citations', 'Engagement Level', 'Research Domain', 'Watershed', 'Country'];
     const rows = sortedCitations.map(c => [
       c.title, c.authors, c.year, c.source, c.publisher, c.doi, c.cites, 
-      c.engagement_level, c.research_domain, c.watershed, c.country,
-      c.volume, c.issue, c.pages, c.referenceCount
+      c.engagement_level, c.research_domain, c.watershed, c.country
     ]);
     
     const csvContent = [
@@ -399,7 +326,7 @@ const CitationsPage = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', 'crossref_citations.csv');
+    link.setAttribute('download', 'rapid_citations.csv');
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -415,7 +342,6 @@ const CitationsPage = () => {
     averageCitations: citations.length > 0 
       ? Math.round(citations.reduce((sum, citation) => sum + (citation.cites || 0), 0) / citations.length) 
       : 0,
-    totalReferences: citations.reduce((sum, citation) => sum + (citation.referenceCount || 0), 0),
     byEngagement: citations.reduce((acc, c) => {
       const level = c.engagement_level || 'Unknown';
       acc[level] = (acc[level] || 0) + 1;
@@ -437,7 +363,7 @@ const CitationsPage = () => {
               <ArrowLeft size={18} className="mr-1" />
               <span className="font-medium">Back to Dashboard</span>
             </Link>
-            <h1 className="text-xl font-semibold text-gray-900">Crossref Citation Analytics</h1>
+            <h1 className="text-xl font-semibold text-gray-900">RAPID Citation Analytics</h1>
           </div>
         </div>
       </header>
@@ -462,7 +388,7 @@ const CitationsPage = () => {
             {/* Statistics Summary */}
             <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
               <div className="text-lg font-semibold text-gray-800 mb-4">Citation Statistics</div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div className="bg-blue-50 rounded-lg p-4">
                   <div className="text-sm text-blue-700 mb-1">Total Publications</div>
                   <div className="text-2xl font-bold text-blue-900">{citationStats.total}</div>
@@ -478,53 +404,49 @@ const CitationsPage = () => {
                     <span className="text-sm font-normal text-amber-700 ml-2">citations</span>
                   </div>
                 </div>
-                <div className="bg-purple-50 rounded-lg p-4">
-                  <div className="text-sm text-purple-700 mb-1">Total References</div>
-                  <div className="text-2xl font-bold text-purple-900">{citationStats.totalReferences}</div>
-                </div>
               </div>
               
               {/* Engagement Level Distribution */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
-                      <div>
-                        <div className="text-sm font-medium text-gray-700 mb-2">By Engagement Level</div>
-                        <div className="space-y-2">
-                        {Object.entries(citationStats.byEngagement)
-                          .sort(([a], [b]) => a.localeCompare(b))
-                          .slice(0, 5)
-                          .map(([level, count]) => (
-                          <div key={level} className="flex justify-between text-sm">
-                          <span className="text-gray-600 truncate">{level}</span>
-                          <span className="font-medium text-gray-900">{count}</span>
-                          </div>
-                        ))}
-                        </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                <div>
+                  <div className="text-sm font-medium text-gray-700 mb-2">By Engagement Level</div>
+                  <div className="space-y-2">
+                    {Object.entries(citationStats.byEngagement)
+                      .sort(([,a], [,b]) => b - a)
+                      .slice(0, 5)
+                      .map(([level, count]) => (
+                      <div key={level} className="flex justify-between text-sm">
+                        <span className="text-gray-600 truncate">{level}</span>
+                        <span className="font-medium text-gray-900">{count}</span>
                       </div>
-                      
-                      <div>
-                        <div className="text-sm font-medium text-gray-700 mb-2">By Research Domain</div>
-                        <div className="space-y-2">
-                        {Object.entries(citationStats.byDomain)
-                          .sort(([a], [b]) => a.localeCompare(b))
-                          .slice(0, 5)
-                          .map(([domain, count]) => (
-                          <div key={domain} className="flex justify-between text-sm">
-                          <span className="text-gray-600 truncate">{domain}</span>
-                          <span className="font-medium text-gray-900">{count}</span>
-                          </div>
-                        ))}
-                        </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <div className="text-sm font-medium text-gray-700 mb-2">By Research Domain</div>
+                  <div className="space-y-2">
+                    {Object.entries(citationStats.byDomain)
+                      .sort(([,a], [,b]) => b - a)
+                      .slice(0, 5)
+                      .map(([domain, count]) => (
+                      <div key={domain} className="flex justify-between text-sm">
+                        <span className="text-gray-600 truncate">{domain}</span>
+                        <span className="font-medium text-gray-900">{count}</span>
                       </div>
-                      </div>
-                    </div>
-                    
-                    {/* Citation Table */}
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Citation Table */}
             <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                 <div>
-                  <div className="text-lg font-semibold text-gray-800">Research Publications</div>
+                  <div className="text-lg font-semibold text-gray-800">Citation Data</div>
                   <p className="text-sm text-gray-500 mt-1">
-                    Academic publications with detailed metadata from Crossref
+                    Analysis of papers related to RAPID river routing model and hydrological modeling
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -546,7 +468,7 @@ const CitationsPage = () => {
                   </div>
                   <input
                     type="text"
-                    placeholder="Search publications..."
+                    placeholder="Search citations..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -655,8 +577,27 @@ const CitationsPage = () => {
                           )}
                         </div>
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Journal Info
+                      <th 
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                        onClick={() => handleSort('watershed')}
+                      >
+                        <div className="flex items-center">
+                          <span>Watershed</span>
+                          {sortField === 'watershed' && (
+                            sortDirection === 'asc' ? <SortAsc size={14} className="ml-1" /> : <SortDesc size={14} className="ml-1" />
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                        onClick={() => handleSort('country')}
+                      >
+                        <div className="flex items-center">
+                          <span>Country</span>
+                          {sortField === 'country' && (
+                            sortDirection === 'asc' ? <SortAsc size={14} className="ml-1" /> : <SortDesc size={14} className="ml-1" />
+                          )}
+                        </div>
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Links
@@ -667,9 +608,20 @@ const CitationsPage = () => {
                     {sortedCitations.length > 0 ? sortedCitations.map((citation) => (
                       <tr key={citation.id} className={`hover:bg-gray-50 ${citation.isOriginalPaper ? 'bg-blue-50' : ''}`}>
                         <td className="px-6 py-4">
-                          <div className="text-sm text-gray-500 max-w-sm truncate" title={citation.title}>
+                          <div className="text-sm font-medium text-gray-900 max-w-md">
                             {citation.title}
+                            {citation.isOriginalPaper && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 ml-2">
+                                Key Paper
+                              </span>
+                            )}
                           </div>
+                          <div className="text-xs text-gray-500 mt-1">{citation.source}</div>
+                          {citation.doi && (
+                            <div className="text-xs text-gray-400 mt-1">
+                              DOI: {citation.doi}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-gray-500 max-w-sm truncate" title={citation.authors}>
@@ -693,15 +645,13 @@ const CitationsPage = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-xs text-gray-600 max-w-32">
-                            <div className="truncate" title={citation.source}>{citation.source}</div>
-                            {citation.volume && (
-                              <div className="text-gray-400">
-                                Vol. {citation.volume}
-                                {citation.issue && `, No. ${citation.issue}`}
-                                {citation.pages && `, pp. ${citation.pages}`}
-                              </div>
-                            )}
+                          <div className="text-xs text-gray-600 max-w-28 truncate" title={citation.watershed}>
+                            {citation.watershed}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-xs text-gray-600 max-w-24 truncate" title={citation.country}>
+                            {citation.country}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -714,26 +664,26 @@ const CitationsPage = () => {
                                   rel="noopener noreferrer"
                                   className="text-blue-600 hover:text-blue-800 text-xs"
                                 >
-                                  View Article
+                                  Article
                                 </a>
                               </div>
                             )}
-                            {citation.doi && (
+                            {citation.fulltext_url && citation.fulltext_url !== citation.url && (
                               <div>
                                 <a 
-                                  href={`https://doi.org/${citation.doi}`} 
+                                  href={citation.fulltext_url} 
                                   target="_blank" 
                                   rel="noopener noreferrer"
                                   className="text-green-600 hover:text-green-800 text-xs"
                                 >
-                                  DOI
+                                  Full Text
                                 </a>
                               </div>
                             )}
-                            {citation.cites > 0 && citation.doi && (
+                            {citation.cites_url && (
                               <div>
                                 <a 
-                                  href={`https://scholar.google.com/scholar?cites=${citation.doi.replace('/', '%2F')}`} 
+                                  href={citation.cites_url} 
                                   target="_blank" 
                                   rel="noopener noreferrer"
                                   className="text-amber-600 hover:text-amber-800 text-xs"
@@ -747,8 +697,8 @@ const CitationsPage = () => {
                       </tr>
                     )) : (
                       <tr>
-                        <td colSpan="8" className="px-6 py-4 text-center text-gray-500">
-                          No publications match your search criteria
+                        <td colSpan="9" className="px-6 py-4 text-center text-gray-500">
+                          No citations match your search criteria
                         </td>
                       </tr>
                     )}
