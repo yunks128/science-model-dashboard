@@ -1,13 +1,13 @@
 {
   "files": {
     "main.css": "/science-model-dashboard/static/css/main.2e1faabd.css",
-    "main.js": "/science-model-dashboard/static/js/main.e57252df.js",
+    "main.js": "/science-model-dashboard/static/js/main.8c8f4a63.js",
     "index.html": "/science-model-dashboard/index.html",
     "main.2e1faabd.css.map": "/science-model-dashboard/static/css/main.2e1faabd.css.map",
-    "main.e57252df.js.map": "/science-model-dashboard/static/js/main.e57252df.js.map"
+    "main.8c8f4a63.js.map": "/science-model-dashboard/static/js/main.8c8f4a63.js.map"
   },
   "entrypoints": [
     "static/css/main.2e1faabd.css",
-    "static/js/main.e57252df.js"
+    "static/js/main.8c8f4a63.js"
   ]
 }
